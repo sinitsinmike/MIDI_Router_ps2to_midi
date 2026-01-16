@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>RP2040 MIDI Router Config</title>
+<style>
+  body {
+    background: #0e0e0e;
+    color: #e0e0e0;
+    font-family: "Fira Code", monospace;
+    padding: 20px;
+    margin: 0;
+  }
+  h2 {
+    color: #fff;
+    margin-bottom: 10px;
+  }
+  button {
+    background: #1a1a1a;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    margin: 4px 3px;
+    font-family: inherit;
+    transition: background 0.15s;
+  }
+  button:hover {
+    background: #292929;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    table-layout: fixed;
+    border: 1px solid #333;
+  }
+  th, td {
+    border-bottom: 1px solid #222;
+    padding: 6px;
+    text-align: center;
+  }
+  th {
+    background: #1e1e1e;
+    color: #bbb;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  tr:hover {
+    background: #1c1c1c;
+  }
+  input, select {
+    background: #1b1b1b;
+    color: #eee;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 3px;
+    font-size: 13px;
+    width: 95%;
+    text-align: center;
+  }
+  #map-container {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid #333;
+    border-radius: 6px;
+  }
+  #status {
+    margin-top: 10px;
+    color: #0f0;
+    font-size: 13px;
+  }
+  .toolbar {
+    position: sticky;
+    top: 0;
+    background: #0e0e0e;
+    padding-bottom: 5px;
+    z-index: 11;
+  }
+  .toolbar button {
+    margin-right: 5px;
+  }
+  footer {
+    margin-top: 25px;
+    padding-top: 15px;
+    border-top: 1px solid #222;
+    font-size: 13px;
+    color: #aaa;
+  }
+  footer a {
+    color: #5cc8ff;
+    text-decoration: none;
+  }
+  footer a:hover {
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body>
+<h2>🎹 RP2040 MIDI Router Configuration</h2>
+
+<div class="toolbar">
+  <button id="connect">🔌 Connect</button>
+  <button id="save">💾 Save</button>
+  <button id="preset1">Preset 1</button>
+  <button id="preset2">Preset 2</button>
+  <button id="preset3">Preset 3</button>
+  <button id="add">➕ Add HID</button>
+  <button id="del">🗑️ Delete</button>
+</div>
+
+<div id="map-container">
+  <table id="map">
+    <thead>
+      <tr>
+        <th style="width:40px;">Sel</th>
+        <th style="width:100px;">HID Code</th>
+        <th style="width:100px;">Type</th>
+        <th style="width:100px;">Value</th>
+        <th style="width:100px;">Port</th>
+        <th style="width:100px;">Channel</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<p id="status">Not connected</p>
+
+<footer>
+  <p>📍 Профиль на <a href="https://www.avito.ru/user/1df2f06b02ab594a5a68010c83b3d87e/profile" target="_blank">Авито</a></p>
+  <p>🎥 YouTube: <a href="https://www.youtube.com/@Electronic_hobby" target="_blank">Electronic Hobby</a></p>
+  <p>🎬 RuTube: <a href="https://rutube.ru/channel/23533497/" target="_blank">rutube.ru/channel/23533497</a></p>
+  <p>💬 VKontakte: <a href="https://vk.com/michaelsinitsin" target="_blank">vk.com/michaelsinitsin</a></p>
+  <p>📧 По вопросам поддержки и сотрудничества — <a href="mailto:sinitsinmike@yahoo.com">sinitsinmike@yahoo.com</a></p>
+</footer>
+
+<script>
+let port, writer, reader;
+let map = {};
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    document.getElementById("status").textContent = "Connected ✔️";
+    readLoop();
+    send("GET_CONFIG");
+  } catch (err) {
+    document.getElementById("status").textContent = "❌ Connection failed: " + err;
+  }
+}
+
+async function readLoop() {
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const str = new TextDecoder().decode(value);
+    try {
+      const json = JSON.parse(str);
+      map = json;
+      render();
+    } catch (e) { console.warn("Parse error:", e); }
+  }
+}
+
+function render() {
+  const tbody = document.querySelector("#map tbody");
+  tbody.innerHTML = "";
+  for (const k in map) {
+    const cfg = map[k];
+    const r = document.createElement("tr");
+    r.innerHTML = `
+      <td><input type="checkbox"></td>
+      <td><input type="text" value="${k}"></td>
+      <td>
+        <select>
+          <option ${cfg.type==="note"?"selected":""}>note</option>
+          <option ${cfg.type==="cc"?"selected":""}>cc</option>
+        </select>
+      </td>
+      <td><input type="number" value="${cfg.value||0}" min="0" max="127"></td>
+      <td>
+        <select>
+          ${["USB","DIN","A","B","C","D","E","F","G","H"]
+            .map(p=>`<option ${cfg.port===p?"selected":""}>${p}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="number" min="1" max="16" value="${cfg.channel||1}"></td>`;
+    tbody.appendChild(r);
+  }
+}
+
+function collectConfig() {
+  const rows = document.querySelectorAll("#map tbody tr");
+  let cfg = {};
+  rows.forEach(r=>{
+    const hid = r.children[1].children[0].value.trim();
+    if (!hid) return;
+    const type = r.children[2].children[0].value;
+    const val = parseInt(r.children[3].children[0].value);
+    const port = r.children[4].children[0].value;
+    const ch = parseInt(r.children[5].children[0].value);
+    cfg[hid] = {type:type, value:val, port:port, channel:ch};
+  });
+  return cfg;
+}
+
+async function send(msg) {
+  if (!writer) return;
+  await writer.write(new TextEncoder().encode(msg + "\n"));
+}
+
+document.getElementById("add").onclick = () => {
+  const tbody = document.querySelector("#map tbody");
+  const r = document.createElement("tr");
+  r.innerHTML = `
+    <td><input type="checkbox" checked></td>
+    <td><input type="text" value="0x00"></td>
+    <td>
+      <select>
+        <option>note</option>
+        <option>cc</option>
+      </select>
+    </td>
+    <td><input type="number" value="60" min="0" max="127"></td>
+    <td>
+      <select>
+        ${["USB","DIN","A","B","C","D","E","F","G","H"]
+          .map(p=>`<option>${p}</option>`).join("")}
+      </select>
+    </td>
+    <td><input type="number" min="1" max="16" value="1"></td>`;
+  tbody.appendChild(r);
+  r.scrollIntoView({ behavior: "smooth", block: "center" });
+};
+
+document.getElementById("del").onclick = () => {
+  const rows = Array.from(document.querySelectorAll("#map tbody tr"));
+  rows.forEach(r => {
+    const box = r.children[0].children[0];
+    if (box.checked) r.remove();
+  });
+};
+
+document.getElementById("connect").onclick = connect;
+document.getElementById("save").onclick = ()=> send("SAVE_CONFIG " + JSON.stringify(collectConfig()));
+document.getElementById("preset1").onclick = ()=> send("LOAD_PRESET 1");
+document.getElementById("preset2").onclick = ()=> send("LOAD_PRESET 2");
+document.getElementById("preset3").onclick = ()=> send("LOAD_PRESET 3");
+</script>
+</body>
+</html>
