@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RP2040 MIDI Router Configuration</title>
+<style>
+  body {
+    background: #121212;
+    color: #e0e0e0;
+    font-family: "Fira Code", monospace;
+    padding: 20px;
+  }
+  h2 { font-weight: 600; color: #fff; }
+  button {
+    background: #222;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    margin-right: 6px;
+  }
+  button:hover { background: #333; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+  }
+  th, td {
+    border: 1px solid #333;
+    padding: 8px;
+    text-align: center;
+  }
+  th {
+    background: #1e1e1e;
+    color: #ddd;
+    font-weight: bold;
+  }
+  tr:nth-child(even) { background: #181818; }
+  input, select {
+    background: #222;
+    color: #eee;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 3px;
+    text-align: center;
+  }
+  #status {
+    margin-top: 10px;
+    color: #0f0;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<h2>🎹 RP2040 MIDI Router Configuration</h2>
+<div>
+  <button id="connect">🔌 Connect</button>
+  <button id="save">💾 Save</button>
+  <button id="preset1">Preset 1</button>
+  <button id="preset2">Preset 2</button>
+  <button id="preset3">Preset 3</button>
+</div>
+
+<table id="map">
+  <tr>
+    <th>HID Code</th>
+    <th>Type</th>
+    <th>Value</th>
+    <th>Port</th>
+    <th>Channel</th>
+  </tr>
+</table>
+
+<p id="status">Not connected</p>
+
+<script>
+let port, writer, reader;
+let map = {};
+
+async function connect() {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    document.getElementById("status").textContent = "Connected ✔️";
+    readLoop();
+    send("GET_CONFIG");
+  } catch (err) {
+    document.getElementById("status").textContent = "❌ Connection failed: " + err;
+  }
+}
+
+async function readLoop() {
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const str = new TextDecoder().decode(value);
+    try {
+      const json = JSON.parse(str);
+      map = json;
+      render();
+    } catch (e) { console.warn("Parse error:", e); }
+  }
+}
+
+function render() {
+  const t = document.getElementById("map");
+  t.innerHTML = `<tr>
+    <th>HID Code</th>
+    <th>Type</th>
+    <th>Value</th>
+    <th>Port</th>
+    <th>Channel</th>
+  </tr>`;
+  for (const k in map) {
+    const cfg = map[k];
+    const r = document.createElement("tr");
+    r.innerHTML = `
+      <td>${k}</td>
+      <td>
+        <select>
+          <option ${cfg.type==="note"?"selected":""}>note</option>
+          <option ${cfg.type==="cc"?"selected":""}>cc</option>
+        </select>
+      </td>
+      <td><input type="number" value="${cfg.value||0}" min="0" max="127"></td>
+      <td>
+        <select>
+          ${["USB","DIN","A","B","C","D","E","F","G","H"]
+            .map(p=>`<option ${cfg.port===p?"selected":""}>${p}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="number" min="1" max="16" value="${cfg.channel||1}" style="width:50px"></td>`;
+    t.appendChild(r);
+  }
+}
+
+function collectConfig() {
+  const rows = document.querySelectorAll("#map tr");
+  let cfg = {};
+  rows.forEach((r,i)=>{
+    if (i===0) return;
+    const k = r.children[0].innerText.trim();
+    const type = r.children[1].children[0].value;
+    const val = parseInt(r.children[2].children[0].value);
+    const port = r.children[3].children[0].value;
+    const ch = parseInt(r.children[4].children[0].value);
+    cfg[k] = {type:type, value:val, port:port, channel:ch};
+  });
+  return cfg;
+}
+
+async function send(msg) {
+  if (!writer) return;
+  await writer.write(new TextEncoder().encode(msg + "\n"));
+}
+
+document.getElementById("connect").onclick = connect;
+document.getElementById("save").onclick = ()=> send("SAVE_CONFIG " + JSON.stringify(collectConfig()));
+document.getElementById("preset1").onclick = ()=> send("LOAD_PRESET 1");
+document.getElementById("preset2").onclick = ()=> send("LOAD_PRESET 2");
+document.getElementById("preset3").onclick = ()=> send("LOAD_PRESET 3");
+</script>
+</body>
+</html>
