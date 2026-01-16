@@ -1,0 +1,23 @@
+.program midi_uart_tx
+.side_set 1 opt
+    pull block
+    set x, 7
+bitloop:
+    out pins, 1 [7]
+    jmp x-- bitloop
+    set pins, 1 [7]
+    nop [7]
+% c-sdk {
+#include "hardware/pio.h"
+static inline void midi_uart_tx_program_init(PIO pio, uint sm, uint offset, uint pin, uint baud) {
+    pio_sm_config c = midi_uart_tx_program_get_default_config(offset);
+    sm_config_set_out_shift(&c, true, true, 8);
+    sm_config_set_out_pins(&c, pin, 1);
+    sm_config_set_sideset_pins(&c, pin);
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+    sm_config_set_clkdiv(&c, (float)clock_get_hz(clk_sys) / (baud * 10.0f));
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

@@ -1,2 +1,2 @@
-# MIDI_Router_ps2to_midi
-MIDI_Router_ps2to_midi
+# RP2040 MIDI Router Pro
+(см. описание в предыдущем сообщении — сокращено для архива)
